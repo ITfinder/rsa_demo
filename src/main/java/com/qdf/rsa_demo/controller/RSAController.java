@@ -1,9 +1,9 @@
 package com.qdf.rsa_demo.controller;
 
 import com.qdf.rsa_demo.entity.JsonResult;
-import com.qdf.rsa_demo.entity.Param;
 import com.qdf.rsa_demo.service.RSAService;
 import com.qdf.rsa_demo.utils.RSAUtil;
+import com.qdf.rsa_demo.utils.TreeMapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,25 +14,41 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.security.KeyPair;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.util.HashMap;
 import java.util.Map;
 
 
 /**
  * 流程：
  *
- * 一、服务器生成秘钥对并保存到redis中
+ * 一、服务器生成秘钥对并保存到本地文件中
+ * 考虑到秘钥对可能会经过用户去修改，动态修改.properties文件的方法查资料没查到，因此改为保存到本地文件
  *
  * 二、加密解密过程：
- * 1. 客户端向服务器申请公钥钥；
+ * 1.客户端拿到公钥文件RSAKey.txt
+ * 2.将参数的key按照升序进行排序后，取到参数值直接拼接在一起，通过公钥进行加密得到sign
+ *      如：{
+ * 	            "wid":"1",
+ * 	            "rsa":"rsa",
+ * 	            "asp":"asp",
+ * 	            "php":"php",
+ * 	            "java":"java"
+ *          }
+ *     经过加密后得到sign="2171C477FB4714EE9C1B4F3989B4C823D4A51FBE7B8E195A1F216D27459C6970A2E6B631FEE692D61E4F213345CFA464B792B7C6720096E6894F61327B3E580B003BC7E949B5999F70C41C59E922350DCEA4E84D40B80865AD4E156638ECDA554FF960D12868A6311A5E5DF14952DE0405DAE116F78EC84AEF83FB0D753DAEAC"
+ *     则最终请求参数为：
+ *      如：{
+ * 	            "wid":"1",
+ * 	            "rsa":"rsa",
+ * 	            "asp":"asp",
+ * 	            "php":"php",
+ * 	            "java":"java",
+ * 	            "sign":"2171C477FB4714EE9C1B4F3989B4C823D4A51FBE7B8E195A1F216D27459C6970A2E6B631FEE692D61E4F213345CFA464B792B7C6720096E6894F61327B3E580B003BC7E949B5999F70C41C59E922350DCEA4E84D40B80865AD4E156638ECDA554FF960D12868A6311A5E5DF14952DE0405DAE116F78EC84AEF83FB0D753DAEAC"
+ *          }
  *
- * 2. 服务器接收到客户端的申请以后，读取文redis的公钥，并将公钥发给客户端
+ * 3.服务器取到wid值，判断为1则进行验签操作
  *
- * 3. 客户端接收到公钥以后，使用公钥对密码加密，然后将密文发给服务器；
+ * 4.取出sign，并从原来的param参数集合中移除sign，调用verify(Map<String, Object> param, String sign)方法
  *
- * 4. 服务器接收到密文以后，使用私钥解密，判断是否是正确的密码。
+ * 5.返回验签结果
  */
 @Controller
 @RequestMapping("/rsa")
@@ -44,42 +60,40 @@ public class RSAController {
     private RSAService rsaService;
 
     /**
-     * 初始化秘钥对
-     * @return ResultJson 结果封装类
+     * 测试连接
+     * @return
      */
     @ResponseBody
-    @RequestMapping(value = "generateKeyPair",method = RequestMethod.GET,produces = "application/json;charset=UTF-8")
-    public JsonResult generateKeyPair(){
+    @RequestMapping(value = "testConnect",method = RequestMethod.GET,produces = "application/json;charset=UTF-8")
+    public JsonResult testConnect(){
         try {
-            logger.info("初始化秘钥对开始执行.....");
-            //调用初始化秘钥对方法
-            KeyPair keyPair = rsaService.generateKeyPair();
-
-            //打印日志
-            //公钥指数、模数
-            RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-            String publicKeyExponent = RSAUtil.getPublicExponent(publicKey).toString(16);
-            String publicKeyModulus = RSAUtil.getPublicModulus(publicKey).toString(16);
-            //私钥指数、模数
-            RSAPrivateKey privateKey = (RSAPrivateKey)keyPair.getPrivate();
-            String privateKeyExponent = RSAUtil.getPrivateExponent(privateKey).toString(16);
-            String privateKeyModulus = RSAUtil.getPrivateModulus(privateKey).toString(16);
-
-            logger.info("初始化秘钥对:publicKeyExponent={},publicKeyModulus={},privateKeyExponent={},privateKeyModulus={}",publicKeyExponent,publicKeyModulus,privateKeyExponent,privateKeyModulus);
-
-            Map<String,Object> mapResult = new HashMap<>();
-            mapResult.put("publicKeyExponent",publicKeyExponent);
-            mapResult.put("publicKeyModulus",publicKeyModulus);
-            mapResult.put("privateKeyExponent",privateKeyExponent);
-            mapResult.put("privateKeyModulus",privateKeyModulus);
-            JsonResult result = JsonResult.createSuccess("初始化秘钥对成功");
-            result.addData(mapResult);
-            return result;
+        KeyPair keyPair = rsaService.testConnect();
+        return RSAUtil.printLogInfo(keyPair,"测试连接");
         }catch (Exception e){
-            logger.error("初始化秘钥对出现异常",e);
-            return JsonResult.createFalied("初始化秘钥对出现异常");
+            logger.error("测试连接出现异常",e);
+            return JsonResult.createFalied("测试连接出现异常");
         }
     }
+
+//    /**
+//     * 初始化秘钥对
+//     * @return ResultJson 结果封装类
+//     */
+//    @ResponseBody
+//    @RequestMapping(value = "generateKeyPair",method = RequestMethod.GET,produces = "application/json;charset=UTF-8")
+//    public JsonResult generateKeyPair(){
+//        try {
+//            logger.info("初始化秘钥对开始执行.....");
+//            //调用初始化秘钥对方法
+//            KeyPair keyPair = rsaService.generateKeyPair();
+//            //日志
+//            JsonResult result = printLogInfo(keyPair,"初始化秘钥对");
+//            return result;
+//        }catch (Exception e){
+//            logger.error("初始化秘钥对出现异常",e);
+//            return JsonResult.createFalied("初始化秘钥对出现异常");
+//        }
+//    }
 
     /**
      * 签名验证
@@ -92,25 +106,25 @@ public class RSAController {
      */
     @ResponseBody
     @RequestMapping(value = "verifyData",method = RequestMethod.POST,produces = "application/json;charset=UTF-8")
-    public JsonResult verifyData(@RequestBody Param param){
+    public JsonResult verifyData(@RequestBody Map<String,Object> param){
         try {
-            String wid = param.getWid();
-            String accessToken = param.getToken();
-            String timestamp = param.getTimestamp();
-            String afterRsa= param.getAfterRsa();
 
-            logger.info("入参：wid={},accessToken={},timestamp={},afterRsa={}",wid,accessToken,timestamp,afterRsa);
-
+            String wid = (String)param.get("wid");
             if(!"1".equals(wid)){
                 return JsonResult.createSuccess("无须验证签名");
             }
-            String msg = rsaService.verify(afterRsa) ? "验证成功" : "验证失败";//验签操作
+            String sign= (String)param.get("sign");
+            param.remove("sign");
+            param = TreeMapUtils.sortMapByKey(param);
+
+            String msg = rsaService.verify(param,sign) ? "验证成功" : "验证失败";//验签操作
             return JsonResult.createSuccess(msg);
         } catch (Exception e) {
             logger.error("验证签名时出现异常",e);
             return JsonResult.createFalied("验证签名时出现异常");
         }
     }
+
 
 
 }

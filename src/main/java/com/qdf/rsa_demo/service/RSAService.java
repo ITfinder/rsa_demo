@@ -1,6 +1,7 @@
 package com.qdf.rsa_demo.service;
 
 import java.security.KeyPair;
+import java.util.Map;
 
 public interface RSAService {
 
@@ -13,9 +14,11 @@ public interface RSAService {
 
     /**
      * 验证签名
-     * @param afterRsa 经过rsa算法加密后的字符串
+     * @param param 经过key排序后的参数
      * @return
      * @throws Exception
      */
-    boolean verify(String afterRsa) throws Exception ;
+    boolean verify(Map<String, Object> param, String sign) throws Exception ;
+
+    KeyPair testConnect() throws Exception;
 }

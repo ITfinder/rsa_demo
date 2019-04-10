@@ -1,6 +1,12 @@
 package com.qdf.rsa_demo.utils;
 
+import com.qdf.rsa_demo.entity.JsonResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
 import javax.crypto.Cipher;
+import java.io.*;
 import java.math.BigInteger;
 import java.security.*;
 import java.security.interfaces.RSAPrivateKey;
@@ -8,13 +14,20 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPrivateKeySpec;
 import java.security.spec.RSAPublicKeySpec;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * RSA实现工具类之保存到redis
+ * RSA实现工具类
  */
+
+@Component
 public class RSAUtil {
+
+    private static Logger logger = LoggerFactory.getLogger(RSAUtil.class);
+    private static String RSA_KEY_STORE = "D:/RSAKey.txt";
+    private static String PUBLIC_KEY_STORE = "D:/publicKey.txt";
+
     /**
      * 秘钥对长度，使用2048加密解密过程所用时间过长，1024已经足够安全
      */
@@ -30,28 +43,45 @@ public class RSAUtil {
      * @throws Exception
      */
     public static KeyPair genKeyPair() throws Exception {
-
-        //判断redis中是否存在，存在则使用，不存在则创建
-        KeyPair redisKeyPair = RedisUtil.get("keyPair",KeyPair.class);
-        if(redisKeyPair != null){
-            return redisKeyPair;
-        }
-
         //利用java自带的秘钥对生成器
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
         keyPairGenerator.initialize(KEY_LENGTH);
         KeyPair keyPair = keyPairGenerator.genKeyPair();
-        saveKeyPair(keyPair);
+        saveKeyPairAndPublicKey(keyPair);
         return keyPair;
     }
 
-    /**
-     * 保存秘钥对到redis中
-     * @param kp 秘钥对
-     * @throws Exception
-     */
-    public static void saveKeyPair(KeyPair kp){
-        RedisUtil.set("keyPair",kp);
+    public static void saveKeyPairAndPublicKey(KeyPair kp) throws Exception {
+        RSAPublicKey pk = (RSAPublicKey)kp.getPublic();
+        BigInteger publicModulus = pk.getModulus();//模数
+        BigInteger publicExponent = pk.getPublicExponent();//指数
+        String publicModulusStr = Base64Util.encryptBASE64((publicModulus+"").getBytes()).replaceAll("[\\s*\t\n\r]", "");//去掉换行符
+        String publicExponentStr = Base64Util.encryptBASE64((publicExponent+"").getBytes()).replaceAll("[\\s*\t\n\r]", "");
+        logger.info("Base64转码后的publicModulus===={}",publicModulusStr);
+        logger.info("Base64转码后的publicExponent===={}",publicExponentStr);
+        String result = "publicModulus=" + publicModulusStr + ",publicExponent=" + publicExponentStr;
+        savePublicKey(result);
+        saveKeyPair(kp);
+    }
+
+    private static void saveKeyPair(KeyPair kp) throws IOException {
+        FileOutputStream fos = new FileOutputStream(RSA_KEY_STORE);
+        ObjectOutputStream oos = new ObjectOutputStream(fos);
+        // 生成密钥
+        oos.writeObject(kp);
+        oos.close();
+        fos.close();
+    }
+
+    private static void savePublicKey(String result) throws IOException {
+        File file = new File(PUBLIC_KEY_STORE);
+        if(!file.exists()){
+            file.createNewFile();
+        }
+
+        PrintWriter pw = new PrintWriter(new FileWriter(PUBLIC_KEY_STORE));
+        pw.println(result);
+        pw.close();
     }
 
     /**
@@ -60,15 +90,56 @@ public class RSAUtil {
      * @throws Exception
      */
     public static KeyPair getKeyPair() throws Exception {
-        return genKeyPair();
+        FileInputStream fis = new FileInputStream(RSA_KEY_STORE);
+        ObjectInputStream oos = new ObjectInputStream(fis);
+        KeyPair kp = (KeyPair) oos.readObject();
+        oos.close();
+        fis.close();
+        return kp;
     }
 
     /**
-     * 获取私钥
+     * 获取公钥
      * @return
      */
-    public static PrivateKey getPrivateKey()throws Exception {
-        return getKeyPair().getPrivate();
+    public static PublicKey getPublicKey()throws Exception {
+        return getKeyPair().getPublic();
+    }
+
+    /**
+     * 根据公钥的模数和指数获取公钥实例
+     * @param modulusStr            base64编码后的公钥模数字符串
+     * @param publicExponentStr     base64编码后的公钥指数字符串
+     * @return PublicKey实例
+     * @throws NoSuchAlgorithmException
+     * @throws InvalidKeySpecException
+     */
+    public static PublicKey getPublicKey(String modulusStr,String publicExponentStr) throws Exception {
+        modulusStr = new String(Base64Util.decryptBASE64(modulusStr));
+        publicExponentStr = new String(Base64Util.decryptBASE64(publicExponentStr));
+        BigInteger modulus = new BigInteger(modulusStr);//模数
+        BigInteger publicExponent = new BigInteger(publicExponentStr);//指数
+        RSAPublicKeySpec rsaPublicKeySpec = new RSAPublicKeySpec(modulus,publicExponent);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        return keyFactory.generatePublic(rsaPublicKeySpec);
+    }
+
+    /**
+     * 根据私钥的模数和指数获取私钥实例
+     * @param modulusStr            base64编码后的私钥模数字符串
+     * @param privateExponentStr    base64编码后的私钥指数字符串
+     * @return PrivateKey实例
+     * @throws NoSuchAlgorithmException
+     * @throws InvalidKeySpecException
+     */
+    public static PrivateKey getPrivateKey(String modulusStr,String privateExponentStr) throws Exception{
+        modulusStr = new String(Base64Util.decryptBASE64(modulusStr));
+        privateExponentStr = new String(Base64Util.decryptBASE64(privateExponentStr));
+        BigInteger modulus = new BigInteger(modulusStr);//模数
+        BigInteger privateExponent = new BigInteger(privateExponentStr);//指数
+        RSAPrivateKeySpec rsaPrivateKeySpec = new RSAPrivateKeySpec(modulus,privateExponent);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        return keyFactory.generatePrivate(rsaPrivateKeySpec);
     }
 
 
@@ -115,15 +186,13 @@ public class RSAUtil {
     /**
      * 签名验证
      * @param afterRsa      经过rsa算法加密后的字符串
+     * @param sign          接口调用者参数拼接后经过rsa加密的签名
      * @return  验证结果  true 成功  false 失败
      * @throws Exception
      */
-    public static boolean verify(String afterRsa) throws Exception{
-        String data = RSAUtil.RSA_TOKEN;
-        RSAPublicKey rsaPublicKey = (RSAPublicKey)getKeyPair().getPublic();
+    public static boolean verify(String afterRsa,String sign) throws Exception{
         RSAPrivateKey rsaPrivateKey = (RSAPrivateKey) getKeyPair().getPrivate();
-        String encryptStr = encrypt(data,rsaPublicKey);
-        String decryptStr = decrypt(encryptStr,rsaPrivateKey);
+        String decryptStr = decrypt(sign,rsaPrivateKey);
         return decryptStr.equals(decrypt(afterRsa,rsaPrivateKey));
     }
 
@@ -196,41 +265,73 @@ public class RSAUtil {
         return pk.getPrivateExponent();
     }
 
-
-    public static void printParam()throws Exception {
-        RSAPublicKey pk = (RSAPublicKey)getKeyPair().getPublic();
-        BigInteger publicModulus = pk.getModulus();//模数
-        BigInteger publicExponent = pk.getPublicExponent();//指数
-
-        System.out.println("publicModulus===="+publicModulus);
-        System.out.println("publicExponent===="+publicExponent);
-
-        RSAPrivateKey privateKey = (RSAPrivateKey)getKeyPair().getPrivate();
-        BigInteger privateModulus = privateKey.getModulus();
-        BigInteger privateExponent = privateKey.getPrivateExponent();
-
-        System.out.println("privateModulus===="+privateModulus);
-        System.out.println("privateExponent===="+privateExponent);
-
-        System.out.println(publicModulus.multiply(publicExponent) == privateExponent);
+    public static JsonResult printLogInfo(KeyPair keyPair, String msg) throws Exception {
+        //打印日志
+        //公钥指数、模数
+        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+        String publicKeyExponent = Base64Util.encryptBASE64((RSAUtil.getPublicExponent(publicKey)+"").getBytes()).replaceAll("[\\s*\t\n\r]", "");
+        String publicKeyModulus = Base64Util.encryptBASE64((RSAUtil.getPublicModulus(publicKey)+"").getBytes()).replaceAll("[\\s*\t\n\r]", "");
+        //私钥指数、模数
+        RSAPrivateKey privateKey = (RSAPrivateKey)keyPair.getPrivate();
+        String privateKeyExponent = Base64Util.encryptBASE64((RSAUtil.getPrivateExponent(privateKey)+"").getBytes()).replaceAll("[\\s*\t\n\r]", "");
+        String privateKeyModulus =  Base64Util.encryptBASE64((RSAUtil.getPrivateModulus(privateKey)+"").getBytes()).replaceAll("[\\s*\t\n\r]", "");
+        logger.info(msg);
+        logger.info("publicKeyExponent=【{}】",publicKeyExponent);
+        logger.info("publicKeyModulus=【{}】",publicKeyModulus);
+        logger.info("privateKeyExponent=【{}】",privateKeyExponent);
+        logger.info("privateKeyModulus=【{}】",privateKeyModulus);
+        Map<String,Object> mapResult = new HashMap<>();
+        mapResult.put("publicKeyExponent",publicKeyExponent);
+        mapResult.put("publicKeyModulus",publicKeyModulus);
+//        mapResult.put("privateKeyExponent",privateKeyExponent);
+//        mapResult.put("privateKeyModulus",privateKeyModulus);
+        JsonResult result = JsonResult.createSuccess(msg);
+        result.addData(mapResult);
+        return result;
     }
 
     public static void main(String[] args) throws Exception {
         genKeyPair();
-        printParam();
-
-        String data = RSAUtil.RSA_TOKEN;
-
-        RSAPublicKey rsaPublicKey = (RSAPublicKey)getKeyPair().getPublic();
-        RSAPrivateKey rsaPrivateKey = (RSAPrivateKey) getKeyPair().getPrivate();
-
-        //注意：中间加密后，如果要打印出来，必须以十六进制或者BCD码的形式打印，不能new String（byte[]）后，再从这个String里getbytes（），
-        // 也不要用base64，不然会破坏原数据。
-        String encryptStr = encrypt(data,rsaPublicKey);
-        System.out.println("公钥加密，并转换成十六进制字符串结果：" + encryptStr);
-
-        String decryptStr = decrypt(encryptStr,rsaPrivateKey);
-        System.out.println("私钥解密，并转换成十六进制字符串结果：" + decryptStr);
+//        String publicModulus = "MTAzMTA3ODg4ODA0MjY0MDkzNTIxNjYxNjI1MzY4NDY5MTE5NTQ5MDEzNjE2MzkwMTIxMTk0NTk1" +
+//                "ODIzOTg1NTg4MzU4MDMwNjMxMzIxMjc3NjIwNDQxNTY0MzA1MDQ4MDU1MDAyMjQ1NDI2NTI3ODg0" +
+//                "MDA1ODkwOTEzNzY5NzQzMzMzNDIxMTY3NzUxMTk2OTI4OTU5MTgyNDU2NzU4NzYzMzA2NTA2NzA3" +
+//                "NzIxODUxOTg2NDA3MTg4MTg3MTUxOTc1MTY3OTMwMDkzMTIxMTk2Mzk0MDA2MTExMjY0NzI4NTUz" +
+//                "MjYxNDEwNjQ5MjUyNTczMTU2ODAwMTExNTMyNjYzMjYxMzk5NDUwOTIxMDgzMzk4NDczODQ1NTY3" +
+//                "NjkyMTc3MzAwOTc0OTE3NjA1MDE0MTcx";
+//
+//        String publicExponent = "NjU1Mzc=";
+//
+//        String privateModulus = "MTAzMTA3ODg4ODA0MjY0MDkzNTIxNjYxNjI1MzY4NDY5MTE5NTQ5MDEzNjE2MzkwMTIxMTk0NTk1" +
+//                "ODIzOTg1NTg4MzU4MDMwNjMxMzIxMjc3NjIwNDQxNTY0MzA1MDQ4MDU1MDAyMjQ1NDI2NTI3ODg0" +
+//                "MDA1ODkwOTEzNzY5NzQzMzMzNDIxMTY3NzUxMTk2OTI4OTU5MTgyNDU2NzU4NzYzMzA2NTA2NzA3" +
+//                "NzIxODUxOTg2NDA3MTg4MTg3MTUxOTc1MTY3OTMwMDkzMTIxMTk2Mzk0MDA2MTExMjY0NzI4NTUz" +
+//                "MjYxNDEwNjQ5MjUyNTczMTU2ODAwMTExNTMyNjYzMjYxMzk5NDUwOTIxMDgzMzk4NDczODQ1NTY3" +
+//                "NjkyMTc3MzAwOTc0OTE3NjA1MDE0MTcx";
+//
+//        String privateExponent = "NTQ3MTA3MjU3NDUyNzc5OTMzODEwNzkxMzEyMTEyMDE1MTQxNDE4ODg1Mjg3Njk0OTYwNzkxOTI5" +
+//                "NzE1OTAwNzYzNzEzNzA2MDI5Mjk2MDM1NzEyNzgxMzkwNDY3NjgxNzg0NzQ4MDE3ODY4OTE0ODM2" +
+//                "ODU2MjU3NzY2ODEwMDE5NDQyNDA5ODAwMzQ5MDk2NDE5NTExOTY1NjM5Mzc4Mzk3NDQwMDY0MTU2" +
+//                "NjQyMjc2OTY2NzQxMzMxMjc4OTc2NjIwODU5ODIyNTYwOTIzODI2NDMxMzc2MDYyOTQ4MTYzMzk4" +
+//                "NjQ2MzcyMDMxOTAyMjM0OTE1ODg4NjE3NTE4OTQ4OTE2Njc3ODQ1MDcwMjEyNDE1NDE0MjQyNDQ0" +
+//                "MjI3MjcyMDUzNDczNjQzOTU3ODMyNzM=";
+//
+//
+//        Map<String,Object> param = new HashMap<>();
+//        param.put("wid",1);
+//        param.put("rsa","rsa");
+//        param.put("asp","asp");
+//        param.put("php","php");
+//        param.put("java","java");
+//
+//        param = TreeMapUtils.sortMapByKey(param);
+//        StringBuffer sb = new StringBuffer();
+//        for(Map.Entry<String, Object> entry:param.entrySet()){
+//            System.out.println("key:"+entry.getKey()+"--value:"+entry.getValue());
+//            sb.append(entry.getValue());
+//        }
+//        String sign = RSAUtil.encrypt(sb.toString(),RSAUtil.getPublicKey());
+//
+//        logger.info(sign);
     }
 
 }

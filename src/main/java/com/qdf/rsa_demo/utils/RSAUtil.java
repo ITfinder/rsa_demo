@@ -334,4 +334,31 @@ public class RSAUtil {
 //        logger.info(sign);
     }
 
+    /**
+     * 根据参数加密
+     * @param key
+     * @return
+     */
+    public static String getSignByParam(String key) {
+        try {
+            return encrypt(key,RSAUtil.getPublicKey());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * 参数解密
+     * @param content
+     * @return
+     */
+    public static String getResultByParam(String content) {
+        try {
+            return RSAUtil.decrypt(content,getKeyPair().getPrivate());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
 }

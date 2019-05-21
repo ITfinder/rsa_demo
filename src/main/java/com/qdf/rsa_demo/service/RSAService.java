@@ -21,4 +21,8 @@ public interface RSAService {
     boolean verify(Map<String, Object> param, String sign) throws Exception ;
 
     KeyPair testConnect() throws Exception;
+
+    String getSignByParam(String key);
+
+    String getResultByParam(String content);
 }

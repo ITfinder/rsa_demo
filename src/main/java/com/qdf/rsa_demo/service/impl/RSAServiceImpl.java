@@ -53,4 +53,14 @@ public class RSAServiceImpl implements RSAService {
         return RSAUtil.getKeyPair();
     }
 
+    @Override
+    public String getSignByParam(String key) {
+        return RSAUtil.getSignByParam(key);
+    }
+
+    @Override
+    public String getResultByParam(String content) {
+        return RSAUtil.getResultByParam(content);
+    }
+
 }

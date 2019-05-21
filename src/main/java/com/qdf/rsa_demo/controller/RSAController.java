@@ -13,8 +13,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.security.KeyPair;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 
 /**
@@ -74,25 +79,90 @@ public class RSAController {
         }
     }
 
-//    /**
-//     * 初始化秘钥对
-//     * @return ResultJson 结果封装类
-//     */
-//    @ResponseBody
-//    @RequestMapping(value = "generateKeyPair",method = RequestMethod.GET,produces = "application/json;charset=UTF-8")
-//    public JsonResult generateKeyPair(){
-//        try {
-//            logger.info("初始化秘钥对开始执行.....");
-//            //调用初始化秘钥对方法
-//            KeyPair keyPair = rsaService.generateKeyPair();
-//            //日志
-//            JsonResult result = printLogInfo(keyPair,"初始化秘钥对");
-//            return result;
-//        }catch (Exception e){
-//            logger.error("初始化秘钥对出现异常",e);
-//            return JsonResult.createFalied("初始化秘钥对出现异常");
-//        }
-//    }
+    /**
+     * 初始化秘钥对
+     * @return ResultJson 结果封装类
+     */
+    @ResponseBody
+    @RequestMapping(value = "generateKeyPair",method = RequestMethod.GET,produces = "application/json;charset=UTF-8")
+    public JsonResult generateKeyPair(){
+        try {
+            logger.info("初始化秘钥对开始执行.....");
+            //调用初始化秘钥对方法
+            KeyPair keyPair = rsaService.generateKeyPair();
+            //日志
+            JsonResult result = RSAUtil.printLogInfo(keyPair,"初始化秘钥对");
+            return result;
+        }catch (Exception e){
+            logger.error("初始化秘钥对出现异常",e);
+            return JsonResult.createFalied("初始化秘钥对出现异常");
+        }
+    }
+
+    /**
+     * 通过参数获取加密后的sign
+     * @return
+     */
+    @ResponseBody
+    @RequestMapping(value = "getSignByParam",method = RequestMethod.POST,produces = "application/json;charset=UTF-8")
+    public JsonResult getSignByParam(@RequestBody Map<String,Object> param){
+        try {
+            String result;
+            String key = (String)param.get("param");
+
+            result = rsaService.getSignByParam(key);
+
+            return JsonResult.createSuccess(result);
+        } catch (Exception e) {
+            logger.error("验证签名时出现异常",e);
+            return JsonResult.createFalied("验证签名时出现异常");
+        }
+    }
+
+    private Set<Map.Entry> getRequestParamMap(HttpServletRequest request) {
+        Map map = new HashMap();
+        Enumeration paramNames = request.getParameterNames();
+        while (paramNames.hasMoreElements()) {
+            String paramName = (String) paramNames.nextElement();
+            String[] paramValues = request.getParameterValues(paramName);
+            if (paramValues.length == 1) {
+                String paramValue = paramValues[0];
+                if (paramValue.length() != 0) {
+                    map.put(paramName, paramValue);
+                }
+            }
+        }
+
+        Set<Map.Entry> set = map.entrySet();
+        System.out.println("------------------------------");
+        for (Map.Entry entry : set) {
+            System.out.println(entry.getKey() + ":" + entry.getValue());
+        }
+        System.out.println("------------------------------");
+        return set;
+    }
+
+    /**
+     * 解密sign
+     * @param param
+     * @return
+     */
+    @ResponseBody
+    @RequestMapping(value = "getResultBySign",method = RequestMethod.POST,produces = "application/json;charset=UTF-8")
+    public JsonResult getResultBySign(@RequestBody Map<String,Object> param){
+        try {
+            String result;
+            String content = (String)param.get("param");
+
+            result = rsaService.getResultByParam(content);
+
+            return JsonResult.createSuccess(result);
+        } catch (Exception e) {
+            logger.error("验证签名时出现异常",e);
+            return JsonResult.createFalied("验证签名时出现异常");
+        }
+    }
+
 
     /**
      * 签名验证
